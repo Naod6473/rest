@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Koïs</title>
+<meta name="description" content="Un bassin de carpes koï animé en néon, ASCII, code et calligraphie japonaise. Code libre de consultation.">
+<link rel="stylesheet" href="css/style.css">
+<link rel="preload" href="fonts/share-tech-mono.woff2" as="font" type="font/woff2" crossorigin>
+</head>
+<body>
+<canvas id="bassin" aria-label="Bassin de koïs animé : clique dans l'eau pour les nourrir"></canvas>
+<div class="puce titre" data-evite>pissits · <b>koïs</b></div>
+<div class="puce stats" data-evite id="stats">…</div>
+<div class="annonce" id="annonce" aria-live="polite"></div>
+<div class="aide" id="aide">Clic : nourrir · glisser : dessiner dans l'eau</div>
+<div class="techs" data-evite role="toolbar" aria-label="Technique de peinture" id="techs" hidden>
+  <span>Technique</span>
+  <button data-t="sumie" aria-pressed="true">Sumi-e</button>
+  <button data-t="lavis" aria-pressed="false">Lavis</button>
+  <button data-t="pinceau" aria-pressed="false">Pinceau</button>
+  <button data-t="mouille" aria-pressed="false">Mouillé</button>
+  <button data-t="papier" aria-pressed="false">Papier</button>
+  <button data-t="contour" aria-pressed="false">Contour</button>
+</div>
+<div class="barre" data-evite role="toolbar" aria-label="Rendu">
+  <button id="plus" aria-haspopup="true" aria-expanded="false" aria-controls="menu"><span class="lib">Style</span> <b id="nomStyle">ASCII</b> ▾</button>
+  <button id="auto" aria-pressed="false">Auto</button>
+  <label class="vitesse"><span class="lib">Vitesse</span> <input type="range" id="vitesse" min="0.2" max="3" step="0.1" value="1"><output id="vval">1×</output></label>
+  <button id="souffle" aria-pressed="false" title="Souffle dans le micro : les koïs s'enfuient et l'eau se ride">≈ <span class="lib">Souffle</span></button>
+  <button id="son" aria-pressed="false">♪ <span class="lib">Musique</span></button>
+  <button id="voirCode" aria-haspopup="dialog">&lt;/&gt; Code</button>
+</div>
+<div class="menu" id="menu" data-evite hidden role="group" aria-label="Tous les styles">
+  <section><h3>Japon</h3><div>
+    <button data-s="calli" aria-pressed="false">Calligraphie</button><button data-s="ukiyo" aria-pressed="false">Estampe ukiyo-e</button><button data-s="or" aria-pressed="false">Trait d'or</button><button data-s="aqua" aria-pressed="false">Aquarelle</button><button data-s="papier" aria-pressed="false">Papier découpé</button>
+  </div></section>
+  <section><h3>Lumière</h3><div>
+    <button data-s="neon" aria-pressed="false">Néon</button><button data-s="abysses" aria-pressed="false">Abysses</button><button data-s="vitrail" aria-pressed="false">Vitrail</button><button data-s="holo" aria-pressed="false">Hologramme</button><button data-s="thermique" aria-pressed="false">Thermique</button>
+  </div></section>
+  <section><h3>Texte</h3><div>
+    <button data-s="ascii" aria-pressed="true">ASCII</button><button data-s="code" aria-pressed="false">Code</button><button data-s="matrix" aria-pressed="false">Matrix</button><button data-s="htop" aria-pressed="false">htop</button>
+  </div></section>
+  <section><h3>Autres</h3><div>
+    <button data-s="pixel" aria-pressed="false">Pixel art</button><button data-s="mosaique" aria-pressed="false">Mosaïque</button><button data-s="encre" aria-pressed="false">Encre néon</button><button data-s="plan" aria-pressed="false">Plan technique</button>
+  </div></section>
+</div>
+<div class="code" id="code" hidden role="dialog" aria-modal="true" aria-label="Code source du moteur">
+  <div class="boite">
+    <header><b>js/bassin.js</b><span id="lignes"></span>
+      <button id="copier">Copier</button>
+      <a href="https://github.com/Naod6473/rest/blob/main/js/bassin.js" target="_blank" rel="noopener">GitHub ↗</a>
+      <button id="fermer" aria-label="Fermer">✕</button></header>
+    <pre><code id="source">Chargement…</code></pre>
+  </div>
+</div>
+<script src="js/bassin.js"></script>
+<script src="js/page.js"></script>
+</body>
+</html>
