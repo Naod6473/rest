@@ -4,6 +4,8 @@ Un bassin de carpes koï animé dans le navigateur, en 18 styles : calligraphie 
 
 En ligne : https://koi.pissits.com
 
+![Le bassin en style calligraphie](capture.jpg)
+
 - Clic dans l'eau : nourrir les carpes.
 - Glisser : peindre un trait dans l'eau, les carpes viennent voir.
 - Musique japonaise en fond, coupable avec le bouton ♪.
@@ -47,4 +49,4 @@ puis ouvrir http://localhost:8000.
 
 Code sous licence [MIT](LICENSE). Police Share Tech Mono sous licence SIL OFL 1.1.
 
-Par Simon · [portfolio.pissits.com](https://portfolio.pissits.com)
+Par Simon · [simonvictor.fr](https://simonvictor.fr)
