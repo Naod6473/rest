@@ -5,6 +5,7 @@
 // API : MVBassin.create(canvas, { avoid, onStats, decor, onVisite }) -> { setStyle, setTech, setSpeed, setAuto, setVis, souffle, visite, destroy }
 // Souffle (micro) : souffle(niveau 0..1) fait fuir les carpes et ride l'eau. De temps en temps un requin, une raie ou une tortue passe.
 // Glisser dans l'eau peint un trait que les carpes viennent voir. Respecte prefers-reduced-motion.
+// Onde : un clic, un granulé ou une goutte fait onduler l'eau (WebGL, si disponible ; sinon le bassin reste tel quel).
 (() => {
     const TAU = Math.PI * 2;
     const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -148,6 +149,7 @@
                 wd.acc--;
                 const an = rand(0, TAU), d = Math.sqrt(Math.random()) * R * .7;
                 S.ripples.push({ x: wd.x + Math.cos(an) * d, y: wd.y + Math.sin(an) * d * .75, born: S.t, life: rand(1.6, 2.6), s: rand(.6, 1.2) * (.6 + wd.level) });
+                if (Math.random() < .25) onde.add(wd.x + Math.cos(an) * d, wd.y + Math.sin(an) * d * .75, .25 + wd.level * .3);
             }
             for (let k = 0; k < wd.level * 3; k++) {
                 if (Math.random() > dt * 18) continue;
@@ -271,6 +273,7 @@
 
         function feed(x, y) {
             S.rings.push({ x, y, born: S.t, s: 1 });
+            onde.add(x, y, 1);
             const k = Math.min(5 + (Math.random() * 3 | 0), 24 - S.food.length);
             for (let i = 0; i < k; i++) {
                 const an = rand(0, TAU), r = Math.sqrt(Math.random()) * 30;
@@ -1766,7 +1769,7 @@
             if (S.t > nextGulp) {
                 nextGulp = S.t + rand(3, 6);
                 const up = S.fish.filter((f) => f.koi && !f.kind && f.z < .15);
-                if (up.length) { const f = up[Math.random() * up.length | 0], h = f.nodes[0]; gulps.push({ x: h.x + Math.cos(f.h) * f.w, y: h.y + Math.sin(f.h) * f.w, born: S.t }); }
+                if (up.length) { const f = up[Math.random() * up.length | 0], h = f.nodes[0]; gulps.push({ x: h.x + Math.cos(f.h) * f.w, y: h.y + Math.sin(f.h) * f.w, born: S.t }); onde.add(h.x, h.y, .5); }
             }
             for (const w of waves) { w.x += w.v * dt; if (w.x < -w.l) { w.x = S.W + w.l; w.y = rand(S.H * .1, S.H * .9); } }
             gulps = gulps.filter((gp) => S.t - gp.born < 2.6);
@@ -2084,6 +2087,94 @@
             ctx.restore();
         }
 
+        // ---------- onde : l'eau se déforme vraiment ----------
+        // Une seconde toile WebGL reprend l'image du bassin et la courbe sous des trains de vagues qui s'élargissent :
+        // le fond se tord sur les pentes, les couleurs se séparent un peu, les crêtes brillent. Chaque pixel additionne
+        // des vagues calculées (pas de simulation). Elle ne tourne que pendant qu'une onde vit ; sans WebGL, rien ne change.
+        const onde = (() => {
+            const MAX = 12, list = [];
+            const off = { draw() {}, add() {}, tick() {}, hide() {}, destroy() {} };
+            if (opts.passage || opts.onde === false) return off;
+            const gc = document.createElement('canvas');
+            gc.setAttribute('aria-hidden', 'true');
+            gc.style.cssText = 'pointer-events:none;visibility:hidden';
+            const gl = gc.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false, depth: false, stencil: false });
+            if (!gl) return off;
+            cv.after(gc);
+            const VS = 'attribute vec2 a;varying vec2 v;void main(){v=vec2(a.x*.5+.5,.5-a.y*.5);gl_Position=vec4(a,0.,1.);}';
+            const FS = `precision highp float;
+varying vec2 v;uniform sampler2D T;uniform vec2 res;uniform vec4 R[${MAX}];uniform float n,px,clair;
+void main(){
+  vec2 p=v*res,g=vec2(0.);
+  for(int i=0;i<${MAX};i++){
+    if(float(i)>=n)break;
+    vec4 r=R[i];
+    // r.x,r.y : centre ; r.z : âge (s) ; r.w : force. Ellipse aplatie : on regarde l'eau un peu de biais
+    vec2 d=(p-r.xy)/vec2(1.,.72);float L=(54.+26.*r.w)*px,dist=length(d)+.001,front=r.z*150.*px,x=dist-front;
+    float k=6.2832/L,w=L*1.1,env=exp(-x*x/(w*w));
+    float f=r.w*exp(-r.z*1.15)*min(1.,r.z*6.)/sqrt(1.+dist/(L*3.));
+    float s=(k*cos(k*x)-2.*x/(w*w)*sin(k*x))*env*f;
+    g+=s*d/dist*vec2(1.,1./.72)/k;
+  }
+  vec2 o=g*22.*px/res;
+  vec4 c=texture2D(T,v+o);
+  float cr=texture2D(T,v+o*1.35).r,cb=texture2D(T,v+o*.65).b;
+  c.r=max(cr,0.);c.b=max(cb,0.);c.a=max(c.a,max(c.r,c.b));
+  float l=dot(g,vec2(-.6,-.8)),glint=smoothstep(.12,.55,l),ombre=smoothstep(.1,.6,-l);
+  vec3 lum=mix(vec3(.62,.95,1.),vec3(1.,.99,.95),clair);
+  c.rgb*=1.-ombre*.22;
+  c+=vec4(lum,1.)*glint*mix(.24,.36,clair);
+  c.a=min(c.a+ombre*.12*(1.-clair),1.);
+  gl_FragColor=c;
+}`;
+            const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+            const pr = gl.createProgram();
+            gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(pr);
+            if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) { gc.remove(); return off; }
+            gl.useProgram(pr);
+            gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+            const aLoc = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(aLoc); gl.vertexAttribPointer(aLoc, 2, gl.FLOAT, false, 0, 0);
+            const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+            [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]].forEach(([a, b]) => gl.texParameteri(gl.TEXTURE_2D, a, b));
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+            const U = {}; ['T', 'res', 'R', 'n', 'px', 'clair'].forEach((k) => { U[k] = gl.getUniformLocation(pr, k); });
+            const buf = new Float32Array(MAX * 4);
+            let lost = false, shown = false, nextRain = rand(6, 12), wake = { x: -999, y: -999 };
+            gc.addEventListener('webglcontextlost', (e) => { e.preventDefault(); lost = true; hide(); });
+            function hide() { if (!shown) return; shown = false; gc.style.visibility = 'hidden'; cv.style.opacity = ''; }
+            // force 0..1 : 1 pour un clic, moins pour un granulé, une goutte ou un sillage
+            function add(x, y, force) {
+                if (lost || reduce.matches) return;
+                if (list.length >= MAX) list.shift();
+                list.push({ x, y, born: S.t, s: force });
+            }
+            function tick(dt) {
+                for (let i = list.length - 1; i >= 0; i--) if (S.t - list[i].born > 4.2) list.splice(i, 1);
+                // une goutte de temps en temps, pour que l'eau vive même sans geste
+                if (S.t > nextRain) { nextRain = S.t + rand(7, 14); add(rand(S.W * .1, S.W * .9), rand(S.H * .15, S.H * .85), rand(.35, .6)); }
+                // sillage léger quand le pointeur glisse sur l'eau
+                if (ptr.active && Math.hypot(ptr.x - wake.x, ptr.y - wake.y) > 70) {
+                    if (wake.x > -900 && !insideBox(ptr.x, ptr.y)) add(ptr.x, ptr.y, .22);
+                    wake.x = ptr.x; wake.y = ptr.y;
+                }
+            }
+            function draw() {
+                if (lost || !list.length || S.vis < .01) { hide(); return; }
+                const w = cv.width, h = cv.height, d = S.dpr;
+                if (gc.width !== w || gc.height !== h) { gc.width = w; gc.height = h; }
+                gl.viewport(0, 0, w, h);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+                list.forEach((r, i) => { buf[i * 4] = r.x * d; buf[i * 4 + 1] = r.y * d; buf[i * 4 + 2] = S.t - r.born; buf[i * 4 + 3] = r.s * S.vis; });
+                gl.uniform4fv(U.R, buf); gl.uniform1f(U.n, list.length); gl.uniform2f(U.res, w, h); gl.uniform1f(U.px, d);
+                gl.uniform1f(U.clair, LIGHT.includes(S.style) ? 1 : 0); gl.uniform1i(U.T, 0);
+                gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                if (!shown) { shown = true; gc.style.visibility = ''; cv.style.opacity = '0'; }
+            }
+            return { draw, add, tick, hide, destroy() { hide(); gc.remove(); } };
+        })();
+
         // ---------- boucle ----------
         let raf = 0, last = 0, acc = 0, n = 0, dead = false;
         function frame(now) {
@@ -2093,11 +2184,13 @@
             S.trans = Math.min(1, S.trans + dt / 1.1);
             if (S.auto && (S.autoT += dt) > 7) { S.autoT = 0; setStyle(STYLES[(STYLES.indexOf(S.style) + 1) % STYLES.length], true); }
             if (++n % 30 === 0) measure();
+            onde.tick(dt);
             render();
+            onde.draw();
             raf = requestAnimationFrame(frame);
         }
         // Animations réduites : les poissons se dispersent, puis une seule image fixe
-        function still() { if (S.t < 4) for (let i = 0; i < 240; i++) step(1 / 60); S.vis = S.visTarget; S.trans = 1; measure(); render(); }
+        function still() { onde.hide(); if (S.t < 4) for (let i = 0; i < 240; i++) step(1 / 60); S.vis = S.visTarget; S.trans = 1; measure(); render(); }
         function start() {
             cancelAnimationFrame(raf);
             if (dead) return;
@@ -2168,6 +2261,7 @@
             destroy() {
                 dead = true;
                 cancelAnimationFrame(raf);
+                onde.destroy();
                 removeEventListener('resize', onResize);
                 removeEventListener('scroll', measure);
                 removeEventListener('pointermove', onMove);
