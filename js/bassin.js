@@ -22,6 +22,9 @@
         tortue: { robe: ['#5af78e', '#2ef2ff'], scale: .95, w: .12, speed: 26, depth: .85, art: [3, 2], ink: 3 },
     };
     const NODES = 16;
+    // Nage « coups de queue puis glisse » (NAGE.on = false : nage continue d'avant)
+    const NAGE = { on: true };
+    const finOpen = (f) => (f.kind || f.fin == null ? 1 : f.fin);
     const STYLES = ['neon', 'ascii', 'code', 'pixel', 'matrix', 'encre', 'plan', 'htop', 'holo', 'thermique', 'calli', 'ukiyo', 'or', 'aqua', 'papier', 'vitrail', 'abysses', 'mosaique'];
     // Calligraphie : robes de koï peintes à l'encre (0 blanc, 1 vermillon, 2 sumi, 3 ocre)
     const INKC = [[70, 64, 58], [196, 50, 26], [24, 22, 26], [190, 128, 38]];
@@ -52,7 +55,7 @@
             const nodes = [];
             for (let i = 0; i < NODES; i++) nodes.push({ x: x - Math.cos(h) * seg * i, y: y - Math.sin(h) * seg * i });
             return { nodes, seg, len, w: len * .11, h, speed: rand(35, 60), base: rand(38, 62), phase: rand(0, TAU), wander: 0,
-                curiosity: rand(.3, 1), depth: rand(.55, 1), robe, target: null, startle: 0, rush: 0, heat: .25, pid: 100 + (Math.random() * 900 | 0) };
+                curiosity: rand(.3, 1), depth: rand(.55, 1), robe, target: null, beat: 1, amp: 1, fin: .5, glide: rand(.7, .88), vel: rand(35, 60), fphase: rand(0, TAU), startle: 0, rush: 0, heat: .25, pid: 100 + (Math.random() * 900 | 0) };
         }
         function seed() {
             if (opts.passage) {
@@ -113,8 +116,26 @@
             f.h += S.spd * clamp(angDiff(f.h, Math.atan2(vy, vx)), -turn * dt, turn * dt);
             f.startle = Math.max(0, f.startle - dt * .6);
             f.rush = f.target ? Math.min(1, f.rush + dt * 2) : Math.max(0, f.rush - dt * .5);
-            f.speed += (f.base * (1 + f.rush * 1.6 + f.startle * 3.2) - f.speed) * Math.min(1, dt * 2.5);
-            f.phase += dt * (3 + f.speed * .07) * (.4 + .6 * S.spd) * (f.kind ? .55 : 1);
+            const want = f.base * (1 + f.rush * 1.6 + f.startle * 3.2);
+            if (f.kind || !NAGE.on) { f.speed += (want - f.speed) * Math.min(1, dt * 2.5); f.amp = 1; f.fin = .5; }
+            else {
+                // coups de queue puis glisse : la carpe prend de l'élan, puis file queue presque immobile
+                const urge = Math.min(1, f.rush + f.startle);
+                if (f.speed < want * (f.glide + urge * .1)) f.beat = 1; else if (f.speed > want * (1.12 - urge * .05)) f.beat = 0;
+                const vGoal = f.beat ? want * 1.3 : want * .5;
+                f.vel += (vGoal - f.vel) * Math.min(1, dt * (f.beat ? 1.6 + urge * 2 : .32));
+                f.speed = f.vel;
+                // la queue bat fort pendant l'élan ; en glisse elle se calme, sauf pour tourner
+                const turning = clamp(Math.abs(angDiff(f.h, Math.atan2(vy, vx))) * 1.2, 0, 1);
+                f.amp += ((f.beat ? 1 : .12 + .45 * turning) - f.amp) * Math.min(1, dt * 2.4);
+                // nageoires pectorales : repliées pour glisser, ouvertes pour tourner, freiner ou chercher
+                const slow = clamp(1 - f.speed / Math.max(1, f.base * .7), 0, 1);
+                f.fin += (clamp((f.beat ? .25 : .05) + turning * .8 + slow * .7 + (f.target ? .2 : 0), 0, 1) - f.fin) * Math.min(1, dt * 3);
+            }
+            const dp = dt * (3 + f.speed * .07) * (.4 + .6 * S.spd);
+            f.phase += dp * (f.kind ? .55 : (.3 + .7 * f.amp));
+            // les nageoires pagaient quand elles sont ouvertes
+            f.fphase += dp * .7 * (f.kind || !NAGE.on ? 1 : .35 + 1.1 * f.fin);
             f.heat += (.25 + f.rush * .35 - f.heat) * Math.min(1, dt * .25);
             hd.x += Math.cos(f.h) * f.speed * dt * S.spd; hd.y += Math.sin(f.h) * f.speed * dt * S.spd;
             for (let i = 1; i < NODES; i++) {
@@ -286,7 +307,7 @@
 
         // ---------- dessin vectoriel (néon) ----------
         function spine(f) {
-            const pts = [], amp = f.w * (.5 + Math.min(f.speed, 140) / 140);
+            const pts = [], amp = f.w * (.5 + Math.min(f.speed, 140) / 140) * (f.kind ? 1 : .3 + .7 * (f.amp == null ? 1 : f.amp));
             for (let i = 0; i < NODES; i++) {
                 const a = f.nodes[Math.max(0, i - 1)], b = f.nodes[Math.min(NODES - 1, i + 1)];
                 let tx = a.x - b.x, ty = a.y - b.y; const L = Math.hypot(tx, ty) || 1; tx /= L; ty /= L;
@@ -327,7 +348,7 @@
                 g.closePath();
             };
             // queue en éventail
-            const T = P[NODES - 1], bx = -T.tx, by = -T.ty, fl = f.len * .3, sw = Math.sin(f.phase - 4.4) * .35, ba = Math.atan2(by, bx);
+            const T = P[NODES - 1], bx = -T.tx, by = -T.ty, fl = f.len * .3, sw = Math.sin(f.phase - 4.4) * .35 * (.35 + .65 * (f.amp == null ? 1 : f.amp)), ba = Math.atan2(by, bx);
             const tip = (s) => ({ x: T.x + Math.cos(ba + s * .5 + sw) * fl, y: T.y + Math.sin(ba + s * .5 + sw) * fl });
             const t1 = tip(1), t2 = tip(-1), nx = T.x + bx * fl * .45 + Math.cos(ba + sw) * 2, ny = T.y + by * fl * .45;
             const tail = () => {
@@ -338,9 +359,9 @@
             };
             // nageoires pectorales
             const fin = (side) => {
-                const p = P[3], w = width(f, p.u), sway = Math.sin(f.phase * .7 + side) * .25;
-                const ox = p.x - side * p.ty * w, oy = p.y + side * p.tx * w, an = Math.atan2(-p.ty, -p.tx) + side * (1 + sway);
-                const fx = ox + Math.cos(an) * f.w * 2.1, fy = oy + Math.sin(an) * f.w * 2.1;
+                const p = P[3], w = width(f, p.u), o = finOpen(f), sway = Math.sin(f.fphase + side) * .25;
+                const ox = p.x - side * p.ty * w, oy = p.y + side * p.tx * w, an = Math.atan2(-p.ty, -p.tx) + side * (.3 + o * (.7 + sway));
+                const fx = ox + Math.cos(an) * f.w * 2.1 * (.75 + .25 * o), fy = oy + Math.sin(an) * f.w * 2.1 * (.75 + .25 * o);
                 return Object.assign(() => {
                     g.beginPath(); g.moveTo(ox, oy);
                     g.quadraticCurveTo(ox + Math.cos(an - side * .5) * f.w * 1.6, oy + Math.sin(an - side * .5) * f.w * 1.6, fx, fy);
@@ -1349,7 +1370,7 @@
             for (let j = 0; j < 2; j++) hairs(g, T.x, T.y, ba + (j ? 1 : -1) * (.32 + sw * .5) + f.lag * 1.2, fl * (K.voile ? 1.9 : 1.25), .55, K.voile ? 9 : 6, finTone, .2, f.phase * .6);
             for (const s of [1, -1]) {
                 const p = P[3], w = width(f, p.u), ox = p.x - s * p.ty * w, oy = p.y + s * p.tx * w;
-                const an = Math.atan2(-p.ty, -p.tx) + s * (1 + Math.sin(f.phase * .7 + s) * .25);
+                const o = finOpen(f), an = Math.atan2(-p.ty, -p.tx) + s * (.3 + o * (.7 + Math.sin(f.fphase + s) * .25));
                 hairs(g, ox, oy, an, f.w * (K.voile ? 3 : 2.3), .5, 5, finTone, .2, f.phase);
                 const q = P[8], wq = width(f, q.u) * .8;
                 hairs(g, q.x - s * q.ty * wq, q.y + s * q.tx * wq, Math.atan2(-q.ty, -q.tx) + s * .8, f.w * 1.3, .4, 3, finTone, .18, f.phase + 2);
@@ -2256,6 +2277,7 @@ void main(){
                 wd.x += (x - wd.x) * (wd.x ? .2 : 1); wd.y += (y - wd.y) * (wd.y ? .2 : 1);
             },
             visite: (k) => visit(k),
+            setNage(on) { NAGE.on = !!on; },
             get style() { return S.style; },
             get auto() { return S.auto; },
             destroy() {
